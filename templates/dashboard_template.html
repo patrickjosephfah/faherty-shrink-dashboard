@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventory Leakage Database</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --sand:#F5EFE2; --panel:#FFFFFF; --ink:#2B2A24; --muted:#8C8270; --line:#E7DFC9;
+    --sun:#CB6A38; --sun-light:#F0C6A6; --ocean:#3E6C6E; --olive:#7E8A5C;
+    --danger-bg:#FBEDE5; --chip-bg:#FAF6EB;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ min-height:100%; }
+  body{ background:var(--sand); color:var(--ink); font-family:'Inter',system-ui,sans-serif; -webkit-font-smoothing:antialiased; line-height:1.45; }
+  p{ line-height:1.5; }
+  ul,ol{ list-style:none; }
+  button{ font:inherit; }
+
+  .font-display{ font-family:'Fraunces',serif; font-optical-sizing:auto; }
+  .font-mono{ font-family:'IBM Plex Mono',monospace; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  ::-webkit-scrollbar{ height:8px; width:8px; }
+  ::-webkit-scrollbar-thumb{ background:#DDD0AF; border-radius:8px; }
+  .kicker{ font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); display:block; }
+  .accent-bar{ height:3px; width:36px; border-radius:2px; background:var(--sun); margin-bottom:12px; }
+  .tag{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.02em; padding:2px 8px; border-radius:999px; border:1px solid var(--line); white-space:nowrap; background:var(--chip-bg); display:inline-block; }
+
+  .page{ max-width:1280px; margin:0 auto; padding:40px 20px; }
+  @media (min-width:768px){ .page{ padding:40px 32px; } }
+
+  .header{ display:flex; flex-direction:column; gap:16px; justify-content:space-between; margin-bottom:32px; }
+  @media (min-width:768px){ .header{ flex-direction:row; align-items:flex-end; } }
+  .header h1{ font-size:30px; font-weight:600; letter-spacing:-0.01em; margin-top:4px; line-height:1.1; }
+  @media (min-width:768px){ .header h1{ font-size:36px; } }
+  .header-sub{ color:var(--muted); font-size:14px; margin-top:8px; max-width:52ch; }
+  .header-meta{ display:flex; flex-direction:column; gap:6px; font-size:14px; align-items:flex-start; }
+  @media (min-width:768px){ .header-meta{ align-items:flex-end; } }
+  .meta-line{ color:var(--muted); font-size:12px; }
+
+  .filter-panel{ padding:20px; margin-bottom:24px; }
+  .filter-row{ display:flex; flex-wrap:wrap; align-items:flex-start; gap:20px 28px; }
+  .filter-row .field .kicker{ margin-bottom:10px; }
+  .filter-controls{ display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px; margin-left:auto; }
+  .filter-note{ font-size:12px; color:var(--muted); margin-top:16px; padding-top:12px; border-top:1px solid var(--line); }
+
+  #channel-chips, #year-chips, #quarter-chips{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{
+    display:inline-flex; align-items:center; gap:7px; padding:7px 13px; border-radius:999px; border:1px solid var(--line);
+    background:var(--chip-bg); cursor:pointer; user-select:none; font-size:13px; font-weight:500; color:var(--muted);
+    transition:all .12s ease;
+  }
+  .chip:hover{ border-color:var(--sun); }
+  .chip.active{ background:var(--ink); border-color:var(--ink); color:#FFF; }
+  .chip .dot{ width:7px; height:7px; border-radius:999px; background:currentColor; opacity:.5; flex-shrink:0; }
+  .chip.active .dot{ opacity:1; background:var(--sun); }
+
+  select{
+    font-family:'Inter',sans-serif; font-size:13px; font-weight:500; padding:8px 32px 8px 13px;
+    border-radius:999px; border:1px solid var(--line);
+    background:var(--chip-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238C8270'/%3E%3C/svg%3E") no-repeat right 13px center;
+    -webkit-appearance:none; appearance:none; color:var(--ink); cursor:pointer;
+  }
+  select:focus{ outline:none; border-color:var(--sun); }
+  .btn-reset{ font-size:12px; font-weight:600; color:var(--sun); background:none; border:none; padding:8px 4px; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+  .btn-reset:hover{ color:#A8552B; }
+
+  .tab-nav{ display:flex; gap:4px; margin-bottom:24px; border-bottom:1px solid var(--line); }
+  .tab-btn{
+    background:none; border:none; cursor:pointer; padding:12px 4px; margin-right:24px;
+    font-family:'Inter',sans-serif; font-size:15px; font-weight:600; color:var(--muted);
+    border-bottom:2px solid transparent; margin-bottom:-1px; transition:color .12s ease, border-color .12s ease;
+  }
+  .tab-btn:hover{ color:var(--ink); }
+  .tab-btn.active{ color:var(--ink); border-bottom-color:var(--sun); }
+  .tab-panel{ display:none; }
+  .tab-panel.active{ display:block; }
+
+  .kpi-grid{ display:grid; grid-template-columns:1fr; gap:16px; margin-bottom:24px; }
+  @media (min-width:640px){ .kpi-grid{ grid-template-columns:1fr 1fr; } }
+  @media (min-width:1024px){ .kpi-grid{ grid-template-columns:repeat(5,1fr); } }
+  .kpi-card{ padding:24px; position:relative; overflow:hidden; }
+  .kpi-card.highlight{ background:var(--danger-bg); border-color:#EAC8B4; }
+  .kpi-card .kicker{ margin-bottom:8px; }
+  .kpi-value{ font-size:28px; font-weight:600; }
+  .kpi-delta{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:600; margin-top:6px; display:flex; flex-wrap:wrap; gap:8px; }
+  .kpi-delta span.up{ color:var(--sun); }
+  .kpi-delta span.down{ color:var(--olive); }
+  .kpi-delta span.flat{ color:var(--muted); }
+  .kpi-note{ font-size:12px; color:var(--muted); margin-top:8px; }
+
+  .watch-panel{ padding:20px 24px; margin-bottom:24px; }
+  .watch-panel .kicker{ margin-bottom:12px; }
+  .watch-list{ display:flex; flex-direction:column; gap:14px; }
+  .scope-banner{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink);
+    background:var(--chip-bg); border:1px solid var(--line); border-radius:8px;
+    padding:10px 16px; margin-bottom:16px;
+  }
+  .scope-banner strong{ font-weight:700; }
+  .scope-banner.multi{ background:var(--danger-bg); border-color:#EAC8B4; }
+  .watch-item{ display:flex; gap:12px; align-items:flex-start; }
+  .watch-marker{ flex-shrink:0; width:22px; height:22px; border-radius:6px; background:var(--sun); color:#fff; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; display:flex; align-items:center; justify-content:center; margin-top:1px; }
+  .watch-text{ font-size:13.5px; line-height:1.5; }
+  .watch-text strong{ font-weight:600; }
+  .watch-empty{ font-size:13px; color:var(--muted); }
+
+  .charts-grid{ display:grid; grid-template-columns:1fr; gap:16px; margin-bottom:24px; }
+  @media (min-width:1024px){ .charts-grid{ grid-template-columns:repeat(5,1fr); } }
+  .col-span-3{ grid-column:span 1; } .col-span-2{ grid-column:span 1; }
+  @media (min-width:1024px){ .col-span-3{ grid-column:span 3; } .col-span-2{ grid-column:span 2; } }
+
+  .chart-card{ padding:24px; }
+  .chart-card h2{ font-size:18px; font-weight:600; margin-bottom:4px; }
+  .chart-sub{ font-size:12px; color:var(--muted); margin-bottom:16px; }
+  .chart-box-72{ height:288px; } .chart-box-56{ height:224px; display:flex; align-items:center; justify-content:center; }
+  .chart-box-80{ height:320px; } .chart-box-96{ height:384px; }
+
+  .legend-list{ margin-top:16px; display:flex; flex-direction:column; gap:8px; }
+  .legend-row{ display:flex; align-items:center; justify-content:space-between; font-size:12px; }
+  .legend-left{ display:flex; align-items:center; gap:8px; }
+  .legend-dot{ width:10px; height:10px; border-radius:999px; display:inline-block; flex-shrink:0; }
+  .legend-pct{ font-family:'IBM Plex Mono',monospace; color:var(--muted); }
+  .type-legend{ display:flex; flex-wrap:wrap; gap:16px; margin-top:14px; }
+  .type-legend-item{ display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); }
+  .type-legend-dot{ width:10px; height:10px; border-radius:3px; display:inline-block; flex-shrink:0; }
+  .reason-stat{ font-size:12.5px; color:var(--ink); background:var(--chip-bg); border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin-top:14px; }
+  .type-badge{ font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.02em; padding:2px 7px; border-radius:5px; white-space:nowrap; display:inline-block; font-weight:600; }
+  .type-badge.discovery{ background:#E4EDEC; color:var(--ocean); }
+  .type-badge.rootcause{ background:#F5E4D8; color:var(--sun); }
+  .recovery-legend{ display:flex; flex-wrap:wrap; gap:16px; margin-top:14px; font-size:12px; color:var(--muted); }
+  .recovery-legend-item{ display:flex; align-items:center; gap:7px; }
+  .recovery-swatch{ width:14px; height:10px; border-radius:3px; display:inline-block; flex-shrink:0; }
+
+  .table-card{ padding:24px; margin-bottom:40px; }
+  .table-head-row{ display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:4px; }
+  .table-head-row h2{ font-size:18px; font-weight:600; }
+  .table-note{ font-size:12px; color:var(--muted); margin-bottom:16px; }
+  .table-wrap{ border:1px solid var(--line); border-radius:8px; overflow-x:auto; max-height:640px; overflow-y:auto; }
+  table{ width:100%; font-size:14px; border-collapse:collapse; }
+  thead th{ position:sticky; top:0; background:var(--panel); z-index:1; text-align:left; font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); font-weight:500; padding:12px 16px; border-bottom:1px solid var(--line); }
+  th.sortable{ cursor:pointer; user-select:none; }
+  th.sortable:hover{ color:var(--ink); }
+  th.sortable.sort-active{ color:var(--sun); }
+  th.sortable .arrow{ margin-left:4px; opacity:0.6; }
+  th.num, td.num{ text-align:right; }
+  tbody td{ padding:10px 16px; border-bottom:1px solid var(--line); }
+  tbody tr:last-child td{ border-bottom:none; }
+  tbody tr:hover{ background:var(--chip-bg); }
+  .cell-mono{ font-family:'IBM Plex Mono',monospace; } .cell-muted{ color:var(--muted); } .cell-xs{ font-size:12px; }
+  .rank-cell{ font-family:'IBM Plex Mono',monospace; color:var(--muted); width:32px; }
+
+  .page-footer{ text-align:center; font-size:12px; color:var(--muted); padding-bottom:24px; }
+  .loading-mask{ position:fixed; inset:0; background:var(--sand); z-index:50; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; }
+  .spinner{ width:28px; height:28px; border-radius:999px; border:3px solid var(--line); border-top-color:var(--sun); animation:spin .8s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div id="loading" class="loading-mask">
+  <div class="spinner"></div>
+  <p class="kicker">Loading inventory leakage data…</p>
+</div>
+
+<div class="page">
+
+  <header class="header">
+    <div>
+      <div class="accent-bar"></div>
+      <span class="kicker">Executive Control Center</span>
+      <h1 class="font-display">Inventory Leakage Database</h1>
+      <p class="header-sub">Net operational shrink across every fiscal year on record — full transaction detail throughout, from FY2023 legacy data through the live current year feed</p>
+    </div>
+    <div class="header-meta">
+      <span class="meta-line" id="meta-line">— records</span>
+    </div>
+  </header>
+
+  <section class="panel filter-panel">
+    <div class="filter-row">
+      <div class="field">
+        <span class="kicker">Location Channel</span>
+        <div id="channel-chips"></div>
+      </div>
+      <div class="field">
+        <span class="kicker">Fiscal Year</span>
+        <div id="year-chips"></div>
+      </div>
+      <div class="field">
+        <span class="kicker">Fiscal Quarter</span>
+        <div id="quarter-chips"></div>
+      </div>
+      <div class="filter-controls">
+        <div class="field">
+          <span class="kicker">Region</span>
+          <select id="region-select"></select>
+        </div>
+        <div class="field">
+          <span class="kicker">Area</span>
+          <select id="area-select"></select>
+        </div>
+        <div class="field">
+          <span class="kicker">Vibe</span>
+          <select id="vibe-select"></select>
+        </div>
+        <button class="btn-reset" id="reset-filters">Reset all</button>
+      </div>
+    </div>
+    <p class="filter-note" id="grain-note">
+      Region / Area / Vibe are store-level attributes — Warehouse, Wholesale/Specialty, and Returns Network transactions carry no store profile and will drop out of view whenever a specific Region, Area, or Vibe is selected.
+    </p>
+  </section>
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="exec">Executive Summary</button>
+    <button class="tab-btn" data-tab="drill">Root Cause Drill-Down</button>
+  </nav>
+
+  <!-- ================= TAB 1: EXECUTIVE SUMMARY ================= -->
+  <section id="tab-exec" class="tab-panel active">
+
+    <div class="panel watch-panel">
+      <span class="kicker">Auto-Generated Insights — updates with filters</span>
+      <div class="watch-list" id="watch-list"></div>
+    </div>
+
+    <div class="scope-banner" id="scope-banner"></div>
+
+    <div class="kpi-grid">
+      <div class="panel kpi-card">
+        <span class="kicker">Gross Loss ($)</span>
+        <p class="font-display kpi-value" style="color:var(--sun)" id="kpi-loss">$0</p>
+        <p class="kpi-delta" id="kpi-loss-delta"></p>
+        <p class="kpi-note">All failure categories except Found Inventory</p>
+      </div>
+      <div class="panel kpi-card">
+        <span class="kicker">Gross Gains ($)</span>
+        <p class="font-display kpi-value" style="color:var(--olive)" id="kpi-gain">$0</p>
+        <p class="kpi-note">Found Inventory (Write-On) only</p>
+      </div>
+      <div class="panel kpi-card">
+        <span class="kicker">Recovery Rate</span>
+        <p class="font-display kpi-value" style="color:var(--ocean)" id="kpi-recovery">0%</p>
+        <p class="kpi-note">Gross Gains ÷ Gross Loss</p>
+      </div>
+      <div class="panel kpi-card highlight">
+        <span class="kicker">Net Operational Shrink ($)</span>
+        <p class="font-display kpi-value" style="color:#A8552B" id="kpi-net">$0</p>
+        <p class="kpi-delta" id="kpi-net-delta"></p>
+        <p class="kpi-note">Gross Loss minus Gross Gains</p>
+      </div>
+      <div class="panel kpi-card">
+        <span class="kicker">Net Units Lost</span>
+        <p class="font-display kpi-value" style="color:var(--ocean)" id="kpi-units">0</p>
+        <p class="kpi-note">Loss units minus gain units</p>
+      </div>
+    </div>
+
+    <div class="panel chart-card" style="margin-bottom:24px;">
+      <h2 class="font-display">Net Operational Shrink — Trailing 13 Fiscal Months</h2>
+      <p class="chart-sub" id="trend-sub">Bars colored by month-over-month direction; dashed line shows the same fiscal month one year earlier. Independent of the Fiscal Year/Quarter filters above — always shows the most recent complete stretch.</p>
+      <div class="chart-box-72"><canvas id="chart-trend"></canvas></div>
+      <div class="recovery-legend">
+        <span class="recovery-legend-item"><span class="recovery-swatch" style="background:#CB6A38"></span>Worse than prior month</span>
+        <span class="recovery-legend-item"><span class="recovery-swatch" style="background:#7E8A5C"></span>Better than prior month</span>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="panel chart-card col-span-3">
+        <h2 class="font-display">Gross Loss vs. Gross Gains by Channel</h2>
+        <p class="chart-sub">Side-by-side comparison across the six location channels</p>
+        <div class="chart-box-72"><canvas id="chart-channel"></canvas></div>
+      </div>
+      <div class="panel chart-card col-span-2">
+        <h2 class="font-display">Leakage Breakdown</h2>
+        <p class="chart-sub">Share of Gross Losses by failure point</p>
+        <div class="chart-box-56"><canvas id="chart-category"></canvas></div>
+        <div id="category-legend" class="legend-list"></div>
+      </div>
+    </div>
+
+    <div class="panel chart-card" style="margin-bottom:24px;">
+      <h2 class="font-display">Top Locations by Net Operational Shrink</h2>
+      <p class="chart-sub">Top 12 locations in the current filter, highest shrink to lowest</p>
+      <div class="chart-box-96"><canvas id="chart-locations"></canvas></div>
+      <div class="recovery-legend">
+        <span class="recovery-legend-item"><span class="recovery-swatch" style="background:#8B2E1A"></span>0% recovered — highest-confidence real loss</span>
+        <span class="recovery-legend-item"><span class="recovery-swatch" style="background:#F0C6A6"></span>Partially or mostly offset by write-ons</span>
+      </div>
+    </div>
+
+    <div class="panel table-card">
+      <div class="table-head-row">
+        <h2 class="font-display">Location Scorecard</h2>
+        <span class="kicker" id="scorecard-count">— locations</span>
+      </div>
+      <p class="table-note">Every location in the current filter, not just the top 12. Click a column header to sort.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="sortable" data-sort="name">Location</th>
+              <th class="sortable" data-sort="channel">Channel</th>
+              <th class="sortable num" data-sort="loss">Gross Loss</th>
+              <th class="sortable num" data-sort="gain">Gross Gains</th>
+              <th class="sortable num" data-sort="net">Net Shrink</th>
+              <th class="sortable num" data-sort="recovery">Recovery %</th>
+              <th class="sortable num" data-sort="lossCount">Loss Events</th>
+              <th class="sortable num" data-sort="avgLoss">Avg Loss/Event</th>
+            </tr>
+          </thead>
+          <tbody id="scorecard-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ================= TAB 2: ROOT CAUSE DRILL-DOWN ================= -->
+  <section id="tab-drill" class="tab-panel">
+
+    <div class="panel chart-card" style="margin-bottom:16px;">
+      <h2 class="font-display" id="timeseries-title">Daily Gross Loss ($) over Time</h2>
+      <p class="chart-sub" id="timeseries-sub">Every day in the current filter range — reveals steady bleed vs. single-day spikes</p>
+      <div class="chart-box-80"><canvas id="chart-timeseries"></canvas></div>
+    </div>
+
+    <div class="panel chart-card" style="margin-bottom:16px;">
+      <h2 class="font-display">Loss by Adjustment Reason</h2>
+      <p class="chart-sub">Gross Loss dollars grouped by the reason logged at the transaction level</p>
+      <div class="chart-box-96"><canvas id="chart-reason"></canvas></div>
+      <div class="type-legend">
+        <span class="type-legend-item"><span class="type-legend-dot" style="background:#3E6C6E"></span>Discovery method — tells you when it was found, not why</span>
+        <span class="type-legend-item"><span class="type-legend-dot" style="background:#CB6A38"></span>Root cause — tells you why it happened</span>
+      </div>
+      <p class="reason-stat" id="reason-stat"></p>
+    </div>
+
+    <div class="panel chart-card" style="margin-bottom:16px;">
+      <div class="table-head-row" style="margin-bottom:4px;">
+        <h2 class="font-display">Matched Recovery</h2>
+        <div class="field">
+          <span class="kicker">Match Window</span>
+          <select id="window-select">
+            <option value="30">30 days</option>
+            <option value="60">60 days</option>
+            <option value="90" selected>90 days</option>
+            <option value="180">180 days</option>
+            <option value="365">365 days</option>
+          </select>
+        </div>
+      </div>
+      <p class="chart-sub" id="matched-sub">
+        Traces each loss to a later write-on of the <em>same SKU</em> within the selected window. For most channels this also requires the <em>same location</em>; Warehouse-channel locations are virtual sub-areas of one physical building, so matches there can cross between them (e.g. a loss recorded at "DTC" matched to a gain at "Wholesale").
+      </p>
+      <div class="kpi-grid" style="margin-bottom:0;">
+        <div class="panel kpi-card">
+          <span class="kicker">Matched Recovery Rate</span>
+          <p class="font-display kpi-value" style="color:var(--ocean)" id="matched-rate">0%</p>
+          <p class="kpi-note">Share of loss $ traced to a same-SKU, same-location recovery</p>
+        </div>
+        <div class="panel kpi-card">
+          <span class="kicker">Matched $ (Verified Recoveries)</span>
+          <p class="font-display kpi-value" style="color:var(--olive)" id="matched-amount">$0</p>
+          <p class="kpi-note">Likely genuine recoveries — mispicked or miscounted, then found</p>
+        </div>
+        <div class="panel kpi-card highlight">
+          <span class="kicker">Unmatched Loss (Real Shrink Candidates)</span>
+          <p class="font-display kpi-value" style="color:#A8552B" id="unmatched-loss">$0</p>
+          <p class="kpi-note">No same-SKU/location recovery found — highest-confidence true loss</p>
+        </div>
+        <div class="panel kpi-card">
+          <span class="kicker">Unmatched Gains</span>
+          <p class="font-display kpi-value" style="color:var(--sun)" id="unmatched-gain">$0</p>
+          <p class="kpi-note">Write-ons with no prior loss at that SKU/location to explain them</p>
+        </div>
+      </div>
+      <div class="recovery-legend" id="window-curve" style="margin-top:16px;"></div>
+      <p class="reason-stat">
+        Longer windows catch more genuine slow recoveries, but also risk crediting coincidental pairings — a loss and a gain 300 days apart at the same SKU/location are far less plausibly the same event than one 10 days apart. There's no single "correct" window; the curve above shows the tradeoff.
+      </p>
+    </div>
+
+    <div class="panel table-card">
+      <div class="table-head-row">
+        <h2 class="font-display">Top Unmatched Losses</h2>
+        <span class="kicker" id="unmatched-count">— rows</span>
+      </div>
+      <p class="table-note">The highest-dollar losses with no matching recovery found within the selected window — your best starting list for loss-prevention follow-up. Very recent losses may still be too new for a match to have occurred yet.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Location</th><th>SKU</th><th>UPC</th><th>Date</th><th class="num">Qty</th><th class="num">Unmatched $</th><th>Failure Point Category</th><th>Adjustment Reason</th><th>Memo</th></tr>
+          </thead>
+          <tbody id="unmatched-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel table-card">
+      <div class="table-head-row">
+        <h2 class="font-display" id="table-title">Top 50 Worst-Offending Transactions</h2>
+        <span class="kicker" id="table-count">— rows</span>
+      </div>
+      <p class="table-note" id="table-note">Sorted by financial impact, descending. Excludes Found Inventory (Write-On) gains.</p>
+      <div class="table-wrap">
+        <table>
+          <thead id="table-head"></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </section>
+
+  <footer class="page-footer">
+    Full transaction-level detail across all fiscal years. Memo field available for historical years (2022–2025); not yet flowing through the current-year live feed.
+  </footer>
+
+</div>
+
+<script>
+const PAYLOAD = __DATA_PAYLOAD__;
+</script>
+<script>
+(function(){
+  const fmtUSD  = (n) => n.toLocaleString('en-US', { style:'currency', currency:'USD', maximumFractionDigits:0 });
+  const fmtUSDp = (n) => n.toLocaleString('en-US', { style:'currency', currency:'USD', maximumFractionDigits:2 });
+  const fmtInt  = (n) => Math.round(n).toLocaleString('en-US');
+
+  const LOC = PAYLOAD.locations;
+  const SKUS = PAYLOAD.skus;
+  const UPCS = PAYLOAD.upcs;
+  const MEMOS = PAYLOAD.memos;
+  const CATS = PAYLOAD.categories;
+  const CHANNELS = PAYLOAD.channels;
+  const REASONS = PAYLOAD.reasons;
+  const FMONTHS = PAYLOAD.fmonths;
+  const ROWS = PAYLOAD.rows;   // [dayOffset, locIdx, skuIdx, catIdx, qty, impact, reasonIdx, memoIdx, fmonthIdx] -- ALL fiscal years
+  const WRITE_ON_IDX = CATS.indexOf('Found Inventory (Write-On)');
+  const BASE_DATE = new Date(PAYLOAD.baseDate + 'T00:00:00Z');
+
+  const DISCOVERY_REASONS = new Set(['Cycle Count (55105)', 'Physical Inventory (55105)', 'Correction', '—']);
+  function reasonType(name){ return DISCOVERY_REASONS.has(name) ? 'discovery' : 'rootcause'; }
+  function fyLabel(fy){ return fy === 0 ? 'Legacy' : String(fy); }
+
+  const MONTH_QUARTER = { Jan:1, Feb:1, Mar:1, Apr:2, May:2, Jun:2, Jul:3, Aug:3, Sep:3, Oct:4, Nov:4, Dec:4 };
+  function fmonthInfo(fmonthIdx){
+    const key = FMONTHS[fmonthIdx];
+    if (key === 'Legacy') return { fy: 0, q: null, label: 'Legacy' };
+    const [y, m] = key.split('-');
+    return { fy: +y, q: MONTH_QUARTER[m], label: key };
+  }
+  function monthLabelShort(key){
+    if (key === 'Legacy') return 'Legacy';
+    const [y,m] = key.split('-'); return `${m} '${y.slice(2)}`;
+  }
+  function sameMonthLastYear(key){
+    if (key === 'Legacy') return null;
+    const [y,m] = key.split('-');
+    const prevKey = (+y - 1) + '-' + m;
+    return FMONTHS.includes(prevKey) ? prevKey : null;
+  }
+  function fmtDate(dayOff){
+    const d = new Date(BASE_DATE.getTime() + dayOff*86400000);
+    return d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric', timeZone:'UTC' });
+  }
+
+  const ALL_YEARS = [...new Set(FMONTHS.map((_, i) => fmonthInfo(i).fy))].sort((a,b) => a-b);
+
+  // The most recent fiscal month is very likely still open (mid-month) — comparing a
+  // partial month to a complete prior month would be misleading, so trend/delta
+  // analysis only ever looks at COMPLETE months.
+  let maxDayOffset = -Infinity;
+  for (const r of ROWS) if (r[0] > maxDayOffset) maxDayOffset = r[0];
+  // approximate each fmonth's day-span by scanning rows once (cheap, done at load time)
+  const fmonthDayRange = FMONTHS.map(() => ({ min: Infinity, max: -Infinity }));
+  for (const r of ROWS) {
+    const fi = r[8];
+    if (r[0] < fmonthDayRange[fi].min) fmonthDayRange[fi].min = r[0];
+    if (r[0] > fmonthDayRange[fi].max) fmonthDayRange[fi].max = r[0];
+  }
+  // a fiscal month is "complete" if it's not the very last month containing data,
+  // OR if that last month's latest row is more than ~25 days old (safe proxy for
+  // "a new fiscal month has likely already started")
+  let latestNonEmptyIdx = -1;
+  fmonthDayRange.forEach((r, i) => { if (r.max > -Infinity) latestNonEmptyIdx = Math.max(latestNonEmptyIdx, i); });
+  const COMPLETE_MONTHS = FMONTHS.filter((m, i) => i !== latestNonEmptyIdx || m === 'Legacy');
+
+  // ---- tab navigation ----
+  let timeseriesChart = null, reasonChart = null;
+  let scorecardSort = { key: 'net', dir: -1 };
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      if (btn.dataset.tab === 'drill' && !timeseriesChart) initDrillCharts();
+    });
+  });
+
+  // ---- Matched Recovery: computed once across ALL fiscal years, with NO cap on
+  // lookback distance — every match records its lag in days, so the window
+  // selector can filter/re-aggregate cheaply at render time without re-running
+  // the FIFO matching pass. Matching order is FIFO by loss age (oldest
+  // unresolved loss claims a gain first), a standard inventory-accounting
+  // convention — it means "median lag" skews longer than a nearest-neighbor
+  // matching would, since older debts get priority over more recent ones.
+  // Physical-location grouping for matching: the Warehouse channel's locations
+  // (Blanks, DTC, Offprice, Wholesale, the Hold-for-QC variants, etc.) are all
+  // virtual sub-locations inside a single physical building — inventory can be
+  // recorded as "lost" in one virtual bin and "found" in another purely from
+  // internal moves, with no real shrink involved. So for matching purposes only,
+  // every Warehouse-channel location shares one group key; every other channel
+  // still matches strictly location-by-location.
+  const WAREHOUSE_CHANNEL = CHANNELS.indexOf('Warehouse');
+  function matchGroupKey(locIdx, skuIdx){
+    const channel = LOC[locIdx][1];
+    if (channel === WAREHOUSE_CHANNEL) return 'WHSE|' + skuIdx;
+    return locIdx + '|' + skuIdx;
+  }
+
+  function computeMatchedRecovery(){
+    const pairs = {};
+    for (let i = 0; i < ROWS.length; i++) {
+      const [day, locIdx, skuIdx, catIdx, qty, impact, reasonIdx, memoIdx] = ROWS[i];
+      const key = matchGroupKey(locIdx, skuIdx);
+      if (!pairs[key]) pairs[key] = { losses: [], gains: [] };
+      if (catIdx === WRITE_ON_IDX) pairs[key].gains.push({ day, qty, impact, remaining: qty, locIdx, matches: [] });
+      else pairs[key].losses.push({ day, qty, impact, remaining: qty, catIdx, reasonIdx, memoIdx, locIdx, skuIdx, matches: [] });
+    }
+    const lossRecords = [], gainRecords = [];
+    for (const key in pairs) {
+      const { losses, gains } = pairs[key];
+      losses.sort((a,b) => a.day - b.day);
+      gains.sort((a,b) => a.day - b.day);
+      for (const gain of gains) {
+        if (gain.qty <= 0) continue;
+        for (const loss of losses) {
+          if (gain.remaining <= 0) break;
+          if (loss.remaining <= 0 || loss.qty <= 0) continue;
+          if (loss.day >= gain.day) continue; // a gain can only resolve an EARLIER loss
+          if (gain.day - loss.day > 730) continue; // beyond ~2 years, treat as too distant to plausibly connect
+          const matchQty = Math.min(loss.remaining, gain.remaining);
+          const lag = gain.day - loss.day;
+          loss.remaining -= matchQty; gain.remaining -= matchQty;
+          loss.matches.push({ qty: matchQty, lag });
+          gain.matches.push({ qty: matchQty, lag });
+        }
+      }
+      for (const loss of losses) lossRecords.push(loss);
+      for (const gain of gains) gainRecords.push(gain);
+    }
+    return { lossRecords, gainRecords };
+  }
+  const MATCHED_RECOVERY = computeMatchedRecovery();
+
+  // Summarize matched/unmatched $ at a given window (days), for the currently
+  // active location filters. Cheap — just filters each record's precomputed
+  // match list by lag, no re-matching.
+  function summarizeRecoveryAtWindow(windowDays, passesLocFilter){
+    let totalLoss = 0, matchedLoss = 0, totalGain = 0, matchedGain = 0;
+    const unmatchedLosses = [];
+    for (const rec of MATCHED_RECOVERY.lossRecords) {
+      if (!passesLocFilter(LOC[rec.locIdx])) continue;
+      totalLoss += rec.impact;
+      const perUnit = rec.qty > 0 ? rec.impact / rec.qty : rec.impact;
+      const matchedQty = rec.matches.filter(m => m.lag <= windowDays).reduce((a,m)=>a+m.qty, 0);
+      matchedLoss += perUnit * matchedQty;
+      const unmatchedQty = rec.qty - matchedQty;
+      if (unmatchedQty > 0.0001) {
+        unmatchedLosses.push({ locIdx: rec.locIdx, skuIdx: rec.skuIdx, day: rec.day, qty: unmatchedQty, impact: perUnit*unmatchedQty, catIdx: rec.catIdx, reasonIdx: rec.reasonIdx, memoIdx: rec.memoIdx });
+      }
+    }
+    for (const rec of MATCHED_RECOVERY.gainRecords) {
+      if (!passesLocFilter(LOC[rec.locIdx])) continue;
+      totalGain += rec.impact;
+      const perUnit = rec.qty > 0 ? rec.impact / rec.qty : rec.impact;
+      const matchedQty = rec.matches.filter(m => m.lag <= windowDays).reduce((a,m)=>a+m.qty, 0);
+      matchedGain += perUnit * matchedQty;
+    }
+    return { totalLoss, matchedLoss, totalGain, matchedGain, unmatchedLosses };
+  }
+
+  const windowSel = document.getElementById('window-select');
+  windowSel.addEventListener('change', render);
+
+  // ---- region/area/vibe dropdowns ----
+  const regionSet = new Set(), vibeSet = new Set();
+  const areasByRegion = {};
+  LOC.forEach(l => {
+    const [, , region, area, vibe] = l;
+    if (region) regionSet.add(region);
+    if (vibe) vibeSet.add(vibe);
+    if (region && area) { if (!areasByRegion[region]) areasByRegion[region] = new Set(); areasByRegion[region].add(area); }
+  });
+  const allAreas = new Set();
+  Object.values(areasByRegion).forEach(s => s.forEach(a => allAreas.add(a)));
+
+  const regionSel = document.getElementById('region-select');
+  const areaSel = document.getElementById('area-select');
+  const vibeSel = document.getElementById('vibe-select');
+
+  function fillSelect(sel, values, allLabel){
+    sel.innerHTML = '';
+    const optAll = document.createElement('option'); optAll.value = 'ALL'; optAll.textContent = allLabel; sel.appendChild(optAll);
+    [...values].sort().forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); });
+  }
+  fillSelect(regionSel, regionSet, 'All Regions');
+  fillSelect(areaSel, allAreas, 'All Areas');
+  fillSelect(vibeSel, vibeSet, 'All Vibes');
+
+  regionSel.addEventListener('change', () => {
+    const r = regionSel.value;
+    if (r === 'ALL') fillSelect(areaSel, allAreas, 'All Areas'); else fillSelect(areaSel, areasByRegion[r] || [], 'All Areas');
+    render();
+  });
+  areaSel.addEventListener('change', render);
+  vibeSel.addEventListener('change', render);
+
+  // ---- channel chips ----
+  const activeChannels = new Set(CHANNELS.map((_, i) => i));
+  const chipWrap = document.getElementById('channel-chips');
+  CHANNELS.forEach((name, idx) => {
+    const chip = document.createElement('div');
+    chip.className = 'chip active';
+    chip.innerHTML = `<span class="dot"></span>${name}`;
+    chip.addEventListener('click', () => {
+      if (activeChannels.has(idx)) { if (activeChannels.size === 1) return; activeChannels.delete(idx); chip.classList.remove('active'); }
+      else { activeChannels.add(idx); chip.classList.add('active'); }
+      render();
+    });
+    chipWrap.appendChild(chip);
+  });
+
+  // ---- fiscal year chips ----
+  // Default to the LATEST fiscal year only, not everything — summing 4+ years of
+  // blended activity by default made the headline KPIs look far larger than any
+  // single year's actual performance. Selecting more years is still one click away.
+  const LATEST_YEAR = ALL_YEARS[ALL_YEARS.length - 1];
+  const activeYears = new Set([LATEST_YEAR]);
+  const yearWrap = document.getElementById('year-chips');
+  ALL_YEARS.forEach(y => {
+    const chip = document.createElement('div');
+    chip.className = (y === LATEST_YEAR) ? 'chip active' : 'chip';
+    chip.innerHTML = `<span class="dot"></span>${fyLabel(y)}`;
+    chip.addEventListener('click', () => {
+      if (activeYears.has(y)) { if (activeYears.size === 1) return; activeYears.delete(y); chip.classList.remove('active'); }
+      else { activeYears.add(y); chip.classList.add('active'); }
+      render();
+    });
+    yearWrap.appendChild(chip);
+  });
+
+  // ---- fiscal quarter chips ----
+  const activeQuarters = new Set([1,2,3,4]);
+  const quarterWrap = document.getElementById('quarter-chips');
+  [1,2,3,4].forEach(q => {
+    const chip = document.createElement('div');
+    chip.className = 'chip active';
+    chip.innerHTML = `<span class="dot"></span>Q${q}`;
+    chip.addEventListener('click', () => {
+      if (activeQuarters.has(q)) { if (activeQuarters.size === 1) return; activeQuarters.delete(q); chip.classList.remove('active'); }
+      else { activeQuarters.add(q); chip.classList.add('active'); }
+      render();
+    });
+    quarterWrap.appendChild(chip);
+  });
+
+  document.getElementById('reset-filters').addEventListener('click', () => {
+    activeChannels.clear(); CHANNELS.forEach((_, i) => activeChannels.add(i));
+    [...chipWrap.children].forEach(c => c.classList.add('active'));
+    activeYears.clear(); activeYears.add(LATEST_YEAR);
+    [...yearWrap.children].forEach((c, i) => c.classList.toggle('active', ALL_YEARS[i] === LATEST_YEAR));
+    activeQuarters.clear(); [1,2,3,4].forEach(q => activeQuarters.add(q));
+    [...quarterWrap.children].forEach(c => c.classList.add('active'));
+    regionSel.value = 'ALL'; fillSelect(areaSel, allAreas, 'All Areas'); vibeSel.value = 'ALL';
+    render();
+  });
+
+  document.getElementById('meta-line').textContent =
+    `${fmtInt(ROWS.length)} transactions · ${LOC.length} locations · ${SKUS.length.toLocaleString()} SKUs · FY${fyLabel(ALL_YEARS[0])}–FY${ALL_YEARS[ALL_YEARS.length-1]}`;
+
+  // ---- location scorecard sort handlers ----
+  let lastScorecardData = [];
+  document.querySelectorAll('th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (scorecardSort.key === key) scorecardSort.dir *= -1;
+      else { scorecardSort.key = key; scorecardSort.dir = (key === 'name' || key === 'channel') ? 1 : -1; }
+      renderScorecard(lastScorecardData);
+    });
+  });
+
+  function renderScorecard(data){
+    lastScorecardData = data;
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.classList.toggle('sort-active', th.dataset.sort === scorecardSort.key);
+      th.querySelector('.arrow')?.remove();
+      if (th.dataset.sort === scorecardSort.key) {
+        const span = document.createElement('span');
+        span.className = 'arrow'; span.textContent = scorecardSort.dir === 1 ? '▲' : '▼';
+        th.appendChild(span);
+      }
+    });
+    const sorted = [...data].sort((a,b) => {
+      const av = a[scorecardSort.key], bv = b[scorecardSort.key];
+      if (typeof av === 'string') return av.localeCompare(bv) * scorecardSort.dir;
+      return (av - bv) * scorecardSort.dir;
+    });
+    const tbody = document.getElementById('scorecard-body');
+    tbody.innerHTML = '';
+    sorted.forEach(row => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${row.name}</td>
+        <td class="cell-xs cell-muted">${CHANNELS[row.channel]}</td>
+        <td class="num cell-mono" style="color:var(--sun)">${fmtUSD(row.loss)}</td>
+        <td class="num cell-mono" style="color:var(--olive)">${fmtUSD(row.gain)}</td>
+        <td class="num cell-mono" style="font-weight:600">${fmtUSD(row.net)}</td>
+        <td class="num cell-mono">${row.recovery.toFixed(0)}%</td>
+        <td class="num cell-mono cell-muted">${fmtInt(row.lossCount)}</td>
+        <td class="num cell-mono cell-muted">${row.lossCount>0 ? fmtUSD(row.loss/row.lossCount) : '—'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('scorecard-count').textContent = `${data.length} locations`;
+  }
+
+  // ---- Tab 1 charts (created eagerly) ----
+  const catColors = { 'Physical Shrink (Loss)':'#CB6A38', 'Stuck In-Transit':'#3E6C6E', 'Unreceived Return':'#9CA678', 'Inbound Shortage':'#B7AC8F' };
+
+  const channelCtx = document.getElementById('chart-channel').getContext('2d');
+  const channelChart = new Chart(channelCtx, {
+    type: 'bar',
+    data: { labels: CHANNELS, datasets: [
+      { label:'Gross Loss', data: CHANNELS.map(()=>0), backgroundColor:'#CB6A38', borderRadius:4, maxBarThickness:36 },
+      { label:'Gross Gains', data: CHANNELS.map(()=>0), backgroundColor:'#9CA678', borderRadius:4, maxBarThickness:36 }
+    ]},
+    options: { responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'top', align:'end', labels:{ font:{family:'Inter',size:12}, color:'#2B2A24', usePointStyle:true, pointStyle:'circle' } },
+        tooltip:{ backgroundColor:'#2B2A24', titleFont:{family:'IBM Plex Mono'}, bodyFont:{family:'IBM Plex Mono'} } },
+      scales:{ x:{ grid:{display:false}, ticks:{ font:{family:'Inter',size:11,weight:500}, color:'#2B2A24' } },
+        y:{ grid:{color:'#E7DFC9'}, ticks:{ callback:(v)=>fmtUSD(v), font:{family:'IBM Plex Mono',size:10}, color:'#8C8270' } } }
+    }
+  });
+
+  const catCtx = document.getElementById('chart-category').getContext('2d');
+  const catChart = new Chart(catCtx, {
+    type:'doughnut',
+    data:{ labels:[], datasets:[{ data:[], backgroundColor:[], borderColor:'#FFFFFF', borderWidth:3, hoverOffset:6 }] },
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'68%',
+      plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#2B2A24', titleFont:{family:'IBM Plex Mono'}, bodyFont:{family:'IBM Plex Mono'},
+        callbacks:{ label:(ctx)=>{ const total=ctx.dataset.data.reduce((a,b)=>a+b,0)||1; const pct=((ctx.raw/total)*100).toFixed(1); return ` ${ctx.label}: ${fmtUSDp(ctx.raw)} (${pct}%)`; } } } }
+    }
+  });
+
+  const locCtx = document.getElementById('chart-locations').getContext('2d');
+  const locChart = new Chart(locCtx, {
+    type:'bar',
+    data:{ labels:[], datasets:[{ data:[], backgroundColor:[], borderRadius:4, maxBarThickness:28 }] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#2B2A24', titleFont:{family:'IBM Plex Mono'}, bodyFont:{family:'IBM Plex Mono'} } },
+      scales:{ x:{ grid:{color:'#E7DFC9'}, ticks:{ callback:(v)=>fmtUSD(v), font:{family:'IBM Plex Mono',size:10}, color:'#8C8270' } },
+        y:{ grid:{display:false}, ticks:{ font:{family:'Inter',size:11.5,weight:500}, color:'#2B2A24' } } }
+    }
+  });
+
+  function heatColor(t){
+    const c1=[240,198,166], c2=[154,58,20];
+    const r=Math.round(c1[0]+(c2[0]-c1[0])*t), g=Math.round(c1[1]+(c2[1]-c1[1])*t), b=Math.round(c1[2]+(c2[2]-c1[2])*t);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  const trendCtx = document.getElementById('chart-trend').getContext('2d');
+  const trendChart = new Chart(trendCtx, {
+    data: { labels: [], datasets: [
+      { type:'bar', label:'Net Shrink', data: [], backgroundColor: [], borderRadius:4, maxBarThickness:40, order:2 },
+      { type:'line', label:'Same month last year', data: [], borderColor:'#8C8270', borderWidth:1.5, borderDash:[4,4], pointRadius:3, pointBackgroundColor:'#8C8270', fill:false, spanGaps:true, order:1 }
+    ]},
+    options: { responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:true, position:'top', align:'end', labels:{ font:{family:'Inter',size:11}, color:'#2B2A24', usePointStyle:true, boxWidth:8 } },
+        tooltip:{ backgroundColor:'#2B2A24', titleFont:{family:'IBM Plex Mono'}, bodyFont:{family:'IBM Plex Mono'},
+          callbacks:{ label:(ctx)=> ctx.datasetIndex===1 ? ` Last year: ${fmtUSDp(ctx.raw)}` : ` ${fmtUSDp(ctx.raw)}` } } },
+      scales:{ x:{ grid:{display:false}, ticks:{ font:{family:'IBM Plex Mono',size:10}, color:'#8C8270' } },
+        y:{ grid:{color:'#E7DFC9'}, ticks:{ callback:(v)=>fmtUSD(v), font:{family:'IBM Plex Mono',size:10}, color:'#8C8270' } } }
+    }
+  });
+
+  // ---- Tab 2 charts (lazy init) ----
+  function initDrillCharts(){
+    const tsCtx = document.getElementById('chart-timeseries').getContext('2d');
+    timeseriesChart = new Chart(tsCtx, {
+      type:'line',
+      data:{ labels:[], datasets:[
+        { label:'Loss', data:[], borderColor:'#CB6A38', backgroundColor:'rgba(203,106,56,0.12)', fill:true, tension:0.15, borderWidth:1.75, pointRadius:[], pointBackgroundColor:[] },
+        { label:'Average', data:[], borderColor:'#8C8270', borderWidth:1, borderDash:[4,4], pointRadius:0, fill:false }
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#2B2A24', titleFont:{family:'IBM Plex Mono'}, bodyFont:{family:'IBM Plex Mono'},
+          callbacks:{ label:(ctx)=> ctx.datasetIndex===1 ? ` Avg: ${fmtUSDp(ctx.raw)}` : ` ${fmtUSDp(ctx.raw)}` } } },
+        scales:{ x:{ grid:{display:false}, ticks:{ autoSkip:true, maxTicksLimit:14, font:{family:'IBM Plex Mono',size:10}, color:'#8C8270' } },
+          y:{ grid:{color:'#E7DFC9'}, ticks:{ callback:(v)=>fmtUSD(v), font:{family:'IBM Plex Mono',size:10}, color:'#8C8270' } } }
+      }
+    });
+
+    const reasonCtx = document.getElementById('chart-reason').getContext('2d');
+    reasonChart = new Chart(reasonCtx, {
+      type:'bar',
+      data:{ labels:[], datasets:[{ data:[], backgroundColor:[], borderRadius:4, maxBarThickness:26 }] },
+      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#2B2A24', titleFont:{family:'IBM Plex Mono'}, bodyFont:{family:'IBM Plex Mono'} } },
+        scales:{ x:{ grid:{color:'#E7DFC9'}, ticks:{ callback:(v)=>fmtUSD(v), font:{family:'IBM Plex Mono',size:10}, color:'#8C8270' } },
+          y:{ grid:{display:false}, ticks:{ font:{family:'Inter',size:11.5,weight:500}, color:'#2B2A24' } } }
+      }
+    });
+    render();
+  }
+
+  // ---- transaction table (always row-level — every fiscal year now has full detail) ----
+  function renderTransactionTable(lossIdxSorted){
+    document.getElementById('table-title').textContent = 'Top 50 Worst-Offending Transactions';
+    document.getElementById('table-note').textContent = 'Individual loss transactions ranked by financial impact, descending. Excludes Found Inventory (Write-On) gains.';
+    document.getElementById('table-head').innerHTML = `
+      <tr><th>#</th><th>Date</th><th>Location</th><th>SKU</th><th>UPC</th><th class="num">Variance Qty</th><th class="num">Financial Impact</th>
+      <th>Failure Point Category</th><th>Adjustment Reason</th><th>Memo</th><th>Type</th></tr>`;
+    const top50 = lossIdxSorted.slice(0, 50);
+    const tbody = document.getElementById('table-body');
+    tbody.innerHTML = '';
+    top50.forEach((i, rank) => {
+      const r = ROWS[i];
+      const [day, , skuIdx, catIdx, qty, impact, reasonIdx, memoIdx] = r;
+      const upc = UPCS[skuIdx] || '—';
+      const reasonName = REASONS[reasonIdx];
+      const type = reasonType(reasonName);
+      const memo = MEMOS[memoIdx] || '—';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="rank-cell">${rank+1}</td>
+        <td class="cell-mono cell-xs cell-muted">${fmtDate(day)}</td>
+        <td class="cell-xs">${LOC[r[1]][0]}</td>
+        <td class="cell-mono cell-xs">${SKUS[skuIdx]}</td>
+        <td class="cell-mono cell-xs cell-muted">${upc}</td>
+        <td class="num cell-mono">${fmtInt(qty)}</td>
+        <td class="num cell-mono" style="font-weight:600;color:var(--sun)">${fmtUSDp(impact)}</td>
+        <td><span class="tag" style="color:var(--sun)">${CATS[catIdx]}</span></td>
+        <td class="cell-mono cell-xs cell-muted">${reasonName}</td>
+        <td class="cell-xs cell-muted">${memo}</td>
+        <td><span class="type-badge ${type==='discovery'?'discovery':'rootcause'}">${type==='discovery'?'Discovery':'Root Cause'}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('table-count').textContent = `${top50.length} of ${lossIdxSorted.length.toLocaleString()} loss transactions`;
+  }
+
+  // ---- main render ----
+  function render(){
+    const region = regionSel.value, area = areaSel.value, vibe = vibeSel.value;
+
+    function passesLocFilter(locMeta){
+      const channel = locMeta[1];
+      if (!activeChannels.has(channel)) return false;
+      if (region !== 'ALL' && locMeta[2] !== region) return false;
+      if (area !== 'ALL' && locMeta[3] !== area) return false;
+      if (vibe !== 'ALL' && locMeta[4] !== vibe) return false;
+      return true;
+    }
+
+    const lossByCat = {}, lossByReason = {}, netByLoc = {};
+    const grossLossByChannel = CHANNELS.map(()=>0), grossGainByChannel = CHANNELS.map(()=>0);
+    const timeBuckets = {};
+    const lossIdx = [];
+    let totalLossImpact = 0, totalGainImpact = 0, totalLossUnits = 0, totalGainUnits = 0;
+
+    for (let i = 0; i < ROWS.length; i++) {
+      const r = ROWS[i];
+      const [day, locIdx, skuIdx, catIdx, qty, impact, reasonIdx, memoIdx, fmonthIdx] = r;
+      const locMeta = LOC[locIdx];
+      if (!passesLocFilter(locMeta)) continue;
+      const info = fmonthInfo(fmonthIdx);
+      if (!activeYears.has(info.fy)) continue;
+      if (info.q !== null && !activeQuarters.has(info.q)) continue; // Legacy has no quarter, always passes
+
+      const channel = locMeta[1];
+      const isGain = catIdx === WRITE_ON_IDX;
+
+      if (isGain) {
+        totalGainImpact += impact; totalGainUnits += qty; grossGainByChannel[channel] += impact;
+      } else {
+        totalLossImpact += impact; totalLossUnits += qty; grossLossByChannel[channel] += impact;
+        lossByCat[catIdx] = (lossByCat[catIdx]||0) + impact;
+        lossByReason[reasonIdx] = (lossByReason[reasonIdx]||0) + impact;
+        lossIdx.push(i);
+        const bucketKey = info.fy === 0 ? 'Legacy' : FMONTHS[fmonthIdx];
+        if (!timeBuckets[bucketKey]) timeBuckets[bucketKey] = { loss:0, dayOff: day, fmonthIdx };
+        timeBuckets[bucketKey].loss += impact;
+      }
+      if (!netByLoc[locIdx]) netByLoc[locIdx] = { loss:0, gain:0, lossCount:0, gainCount:0 };
+      if (isGain) { netByLoc[locIdx].gain += impact; netByLoc[locIdx].gainCount++; }
+      else { netByLoc[locIdx].loss += impact; netByLoc[locIdx].lossCount++; }
+    }
+
+    lossIdx.sort((a,b) => ROWS[b][5] - ROWS[a][5]);
+    renderTransactionTable(lossIdx);
+
+    // ---- scorecards ----
+    const netShrink = totalLossImpact - totalGainImpact;
+    const netUnits = totalLossUnits - totalGainUnits;
+    const recoveryRate = totalLossImpact > 0 ? (totalGainImpact/totalLossImpact)*100 : 0;
+    document.getElementById('kpi-loss').textContent = fmtUSD(totalLossImpact);
+    document.getElementById('kpi-gain').textContent = fmtUSD(totalGainImpact);
+    document.getElementById('kpi-net').textContent = fmtUSD(netShrink);
+    document.getElementById('kpi-units').textContent = fmtInt(netUnits);
+    document.getElementById('kpi-recovery').textContent = recoveryRate.toFixed(1) + '%';
+
+    // ---- scope banner: make explicit what the KPIs below are actually summing ----
+    const yearsSortedForBanner = [...activeYears].sort((a,b) => a-b);
+    const yearsLabel = yearsSortedForBanner.length === ALL_YEARS.length
+      ? 'all fiscal years'
+      : yearsSortedForBanner.map(fyLabel).join(', ');
+    const quartersLabel = activeQuarters.size === 4 ? '' : ` · Q${[...activeQuarters].sort().join('/Q')} only`;
+    const channelsLabel = activeChannels.size === CHANNELS.length ? '' : ` · ${activeChannels.size} of ${CHANNELS.length} channels`;
+    const isMultiYear = yearsSortedForBanner.length > 1;
+    const banner = document.getElementById('scope-banner');
+    banner.classList.toggle('multi', isMultiYear);
+    banner.innerHTML = isMultiYear
+      ? `⚠ The KPIs below are a <strong>combined sum across ${yearsLabel}</strong>${quartersLabel}${channelsLabel} — not a single year's figures.`
+      : `Showing <strong>${yearsLabel}</strong>${quartersLabel}${channelsLabel}.`;
+
+    // ---- MoM / YoY trend (independent of Year/Quarter chips, respects loc filters) ----
+    const monthlySeries = {};
+    FMONTHS.forEach(m => monthlySeries[m] = { loss:0, gain:0 });
+    for (const r of ROWS) {
+      const locMeta = LOC[r[1]];
+      if (!passesLocFilter(locMeta)) continue;
+      const key = FMONTHS[r[8]];
+      if (r[3] === WRITE_ON_IDX) monthlySeries[key].gain += r[5]; else monthlySeries[key].loss += r[5];
+    }
+    const netByMonth = key => monthlySeries[key].loss - monthlySeries[key].gain;
+    const completeNonLegacy = COMPLETE_MONTHS.filter(m => m !== 'Legacy');
+    const trailing = completeNonLegacy.slice(-13);
+    const trailingWithAnchor = completeNonLegacy.slice(-14);
+
+    const trendLabels = trailing.map(monthLabelShort);
+    const trendValues = trailing.map(netByMonth);
+    const trendColors = trailing.map((key, i) => {
+      const priorKey = trailingWithAnchor[i];
+      if (!priorKey || priorKey === key) return '#CB6A38';
+      return netByMonth(key) <= netByMonth(priorKey) ? '#7E8A5C' : '#CB6A38';
+    });
+    const trendYoY = trailing.map(key => { const py = sameMonthLastYear(key); return py ? netByMonth(py) : null; });
+    trendChart.data.labels = trendLabels;
+    trendChart.data.datasets[0].data = trendValues;
+    trendChart.data.datasets[0].backgroundColor = trendColors;
+    trendChart.data.datasets[1].data = trendYoY;
+    trendChart.update();
+
+    const latestMonth = completeNonLegacy[completeNonLegacy.length - 1];
+    const priorMonth = completeNonLegacy[completeNonLegacy.length - 2];
+    const yoyMonth = sameMonthLastYear(latestMonth);
+    function deltaBadge(current, previous, label){
+      if (previous === null || previous === undefined) return `<span class="flat">${label}: n/a</span>`;
+      if (previous === 0) return current === 0 ? `<span class="flat">${label}: flat</span>` : `<span class="flat">${label}: new</span>`;
+      const pct = ((current - previous) / Math.abs(previous)) * 100;
+      const arrow = pct > 0.5 ? '▲' : (pct < -0.5 ? '▼' : '—');
+      return `<span class="${pct > 0.5 ? 'up' : (pct < -0.5 ? 'down' : 'flat')}">${label}: ${arrow} ${Math.abs(pct).toFixed(1)}%</span>`;
+    }
+    const lossLatest = monthlySeries[latestMonth].loss, lossPrior = priorMonth ? monthlySeries[priorMonth].loss : null, lossYoY = yoyMonth ? monthlySeries[yoyMonth].loss : null;
+    const netLatest = netByMonth(latestMonth), netPrior = priorMonth ? netByMonth(priorMonth) : null, netYoY = yoyMonth ? netByMonth(yoyMonth) : null;
+    document.getElementById('kpi-loss-delta').innerHTML = deltaBadge(lossLatest, lossPrior, 'MoM') + deltaBadge(lossLatest, lossYoY, 'YoY');
+    document.getElementById('kpi-net-delta').innerHTML = deltaBadge(netLatest, netPrior, 'MoM') + deltaBadge(netLatest, netYoY, 'YoY');
+
+    // ---- channel comparison ----
+    channelChart.data.datasets[0].data = grossLossByChannel;
+    channelChart.data.datasets[1].data = grossGainByChannel;
+    channelChart.options.plugins.tooltip.callbacks.label = (ctx) => {
+      const loss = grossLossByChannel[ctx.dataIndex], gain = grossGainByChannel[ctx.dataIndex];
+      if (ctx.datasetIndex === 0) { const rec = loss>0 ? ((gain/loss)*100).toFixed(0) : '0'; return ` Gross Loss: ${fmtUSDp(loss)}  (Recovery: ${rec}%)`; }
+      return ` Gross Gains: ${fmtUSDp(gain)}`;
+    };
+    channelChart.update();
+
+    // ---- category donut ----
+    const catLabels=[], catData=[], catBg=[];
+    CATS.forEach((name, idx) => { if (idx===WRITE_ON_IDX) return; catLabels.push(name); catData.push(lossByCat[idx]||0); catBg.push(catColors[name]||'#B7AC8F'); });
+    catChart.data.labels = catLabels; catChart.data.datasets[0].data = catData; catChart.data.datasets[0].backgroundColor = catBg; catChart.update();
+    const catTotal = catData.reduce((a,b)=>a+b,0) || 1;
+    const legendEl = document.getElementById('category-legend'); legendEl.innerHTML = '';
+    catLabels.forEach((label,i) => {
+      const pct = ((catData[i]/catTotal)*100).toFixed(1);
+      const row = document.createElement('div'); row.className='legend-row';
+      row.innerHTML = `<span class="legend-left"><span class="legend-dot" style="background:${catBg[i]}"></span><span>${label}</span></span><span class="legend-pct">${pct}%</span>`;
+      legendEl.appendChild(row);
+    });
+
+    // ---- top locations + scorecard ----
+    const locNetFull = Object.entries(netByLoc).map(([idx,v]) => ({ name: LOC[idx][0], channel: LOC[idx][1], net: v.loss-v.gain, loss:v.loss, gain:v.gain, recovery: v.loss>0?(v.gain/v.loss)*100:0, lossCount: v.lossCount, gainCount: v.gainCount })).sort((a,b)=>b.net-a.net);
+    renderScorecard(locNetFull);
+    const locNet = locNetFull.slice(0,12);
+    const maxNet = Math.max(...locNet.map(l=>l.net),1), minNet = Math.min(...locNet.map(l=>l.net),0), span=(maxNet-minNet)||1;
+    const ZERO_RECOVERY_COLOR = '#8B2E1A';
+    locChart.data.labels = locNet.map(l=>l.name);
+    locChart.data.datasets[0].data = locNet.map(l=>l.net);
+    locChart.data.datasets[0].backgroundColor = locNet.map(l => l.gain===0 ? ZERO_RECOVERY_COLOR : heatColor((l.net-minNet)/span));
+    locChart.options.plugins.tooltip.callbacks.label = (ctx) => { const l = locNet[ctx.dataIndex]; return [` Net Shrink: ${fmtUSDp(l.net)}`, ` Loss: ${fmtUSDp(l.loss)} · Gain: ${fmtUSDp(l.gain)} · Recovery: ${l.recovery.toFixed(0)}%`]; };
+    locChart.update();
+
+    // ---- time series (Tab 2): daily if exactly one fiscal year selected, else monthly ----
+    const singleYear = activeYears.size === 1;
+    document.getElementById('timeseries-title').textContent = singleYear ? 'Daily Gross Loss ($) over Time' : 'Fiscal-Month Gross Loss ($) over Time';
+    document.getElementById('timeseries-sub').textContent = singleYear
+      ? 'Every day in the current filter range — reveals steady bleed vs. single-day spikes (e.g. cycle counts)'
+      : 'Multiple fiscal years are in view, so this shows fiscal-month totals rather than daily detail';
+
+    let labels, values;
+    if (singleYear) {
+      const offs = Object.values(timeBuckets).map(b => b.dayOff);
+      if (offs.length) {
+        // rebuild true daily sums directly from ROWS (timeBuckets above is keyed by fiscal month, not day)
+        const dailyLoss = {};
+        let minOff = Infinity, maxOff = -Infinity;
+        for (const r of ROWS) {
+          if (r[3] === WRITE_ON_IDX) continue;
+          const locMeta = LOC[r[1]]; if (!passesLocFilter(locMeta)) continue;
+          const info = fmonthInfo(r[8]); if (!activeYears.has(info.fy)) continue;
+          if (info.q !== null && !activeQuarters.has(info.q)) continue;
+          dailyLoss[r[0]] = (dailyLoss[r[0]]||0) + r[5];
+          if (r[0] < minOff) minOff = r[0];
+          if (r[0] > maxOff) maxOff = r[0];
+        }
+        labels = []; values = [];
+        for (let d = minOff; d <= maxOff; d++) { labels.push(fmtDate(d).replace(/, \d{4}$/, '')); values.push(dailyLoss[d] || 0); }
+      } else { labels = []; values = []; }
+    } else {
+      const bucketKeys = Object.keys(timeBuckets).sort((a,b) => {
+        const ai = a==='Legacy' ? -1 : FMONTHS.indexOf(a), bi = b==='Legacy' ? -1 : FMONTHS.indexOf(b);
+        return ai - bi;
+      });
+      labels = bucketKeys.map(monthLabelShort);
+      values = bucketKeys.map(k => timeBuckets[k].loss);
+    }
+    const avg = values.length ? values.reduce((a,b)=>a+b,0)/values.length : 0;
+    const pointRadii = values.map(v => (avg>0 && v > avg*2.5) ? 4 : 0);
+    const pointColors = values.map(v => (avg>0 && v > avg*2.5) ? '#8B2E1A' : '#CB6A38');
+    if (timeseriesChart) {
+      timeseriesChart.data.labels = labels;
+      timeseriesChart.data.datasets[0].data = values;
+      timeseriesChart.data.datasets[0].pointRadius = singleYear ? pointRadii : 3;
+      timeseriesChart.data.datasets[0].pointBackgroundColor = singleYear ? pointColors : '#CB6A38';
+      timeseriesChart.data.datasets[1].data = labels.map(() => avg);
+      timeseriesChart.update();
+    }
+
+    // ---- loss by reason ----
+    const reasonEntries = REASONS.map((name, idx) => ({ name, value: lossByReason[idx]||0 })).filter(r=>r.value>0).sort((a,b)=>b.value-a.value);
+    const reasonColors = reasonEntries.map(r => reasonType(r.name)==='discovery' ? '#3E6C6E' : '#CB6A38');
+    if (reasonChart) {
+      reasonChart.data.labels = reasonEntries.map(r=>r.name);
+      reasonChart.data.datasets[0].data = reasonEntries.map(r=>r.value);
+      reasonChart.data.datasets[0].backgroundColor = reasonColors;
+      reasonChart.update();
+    }
+    const discoveryTotal = reasonEntries.filter(r=>reasonType(r.name)==='discovery').reduce((a,b)=>a+b.value,0);
+    const discoveryPct = totalLossImpact>0 ? (discoveryTotal/totalLossImpact*100).toFixed(1) : '0.0';
+    document.getElementById('reason-stat').innerHTML = `<strong>${discoveryPct}%</strong> of Gross Loss in this view (${fmtUSD(discoveryTotal)}) is currently tagged only by discovery method — the data doesn't yet capture why those variances happened.`;
+
+    // ---- matched recovery (spans all fiscal years, window-selectable) ----
+    const selectedWindow = +windowSel.value;
+    const { totalLoss: totalLossForMatch, matchedLoss: matchedLossSum, totalGain: totalGainForMatch, matchedGain: matchedGainSum, unmatchedLosses: unmatchedFiltered0 } = summarizeRecoveryAtWindow(selectedWindow, passesLocFilter);
+    const matchedRate = totalLossForMatch > 0 ? (matchedLossSum / totalLossForMatch) * 100 : 0;
+    const unmatchedLossSum = totalLossForMatch - matchedLossSum;
+    const unmatchedGainSum = totalGainForMatch - matchedGainSum;
+    document.getElementById('matched-rate').textContent = matchedRate.toFixed(1) + '%';
+    document.getElementById('matched-amount').textContent = fmtUSD(matchedLossSum);
+    document.getElementById('unmatched-loss').textContent = fmtUSD(unmatchedLossSum);
+    document.getElementById('unmatched-gain').textContent = fmtUSD(unmatchedGainSum);
+
+    // recovery-by-window curve, for context alongside whatever window is selected
+    const curveWindows = [30, 60, 90, 180, 365];
+    const curveEl = document.getElementById('window-curve');
+    curveEl.innerHTML = '';
+    curveWindows.forEach(w => {
+      const { totalLoss, matchedLoss } = summarizeRecoveryAtWindow(w, passesLocFilter);
+      const rate = totalLoss > 0 ? (matchedLoss/totalLoss*100) : 0;
+      const span = document.createElement('span');
+      span.className = 'recovery-legend-item';
+      span.style.fontWeight = (w === selectedWindow) ? '700' : '400';
+      span.style.color = (w === selectedWindow) ? 'var(--ink)' : 'var(--muted)';
+      span.innerHTML = `${w}d: ${rate.toFixed(1)}%`;
+      curveEl.appendChild(span);
+    });
+
+    const unmatchedFiltered = unmatchedFiltered0.sort((a,b) => b.impact - a.impact);
+    const top20 = unmatchedFiltered.slice(0, 20);
+    const ubody = document.getElementById('unmatched-body');
+    ubody.innerHTML = '';
+    top20.forEach((u, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="rank-cell">${i+1}</td>
+        <td>${LOC[u.locIdx][0]}</td>
+        <td class="cell-mono cell-xs">${SKUS[u.skuIdx]}</td>
+        <td class="cell-mono cell-xs cell-muted">${UPCS[u.skuIdx] || '—'}</td>
+        <td class="cell-mono cell-xs cell-muted">${fmtDate(u.day)}</td>
+        <td class="num cell-mono">${fmtInt(u.qty)}</td>
+        <td class="num cell-mono" style="font-weight:600;color:#A8552B">${fmtUSDp(u.impact)}</td>
+        <td><span class="tag" style="color:var(--sun)">${CATS[u.catIdx]}</span></td>
+        <td class="cell-mono cell-xs cell-muted">${REASONS[u.reasonIdx]}</td>
+        <td class="cell-xs cell-muted">${MEMOS[u.memoIdx] || '—'}</td>
+      `;
+      ubody.appendChild(tr);
+    });
+    document.getElementById('unmatched-count').textContent = `${top20.length} of ${unmatchedFiltered.length.toLocaleString()} unmatched losses`;
+
+    // ---- watch items ----
+    const items = [];
+    const zeroRecoveryTop = locNetFull.filter(l=>l.gain===0 && l.net>0).sort((a,b)=>b.net-a.net)[0];
+    if (zeroRecoveryTop) items.push(`<strong>${zeroRecoveryTop.name}</strong> lost ${fmtUSD(zeroRecoveryTop.net)} with <strong>0% recovered</strong> in the current view — the highest-confidence real, unrecovered loss.`);
+    if (reasonEntries.length) { const top = reasonEntries[0]; const pct=(top.value/totalLossImpact*100).toFixed(0); items.push(`<strong>${top.name}</strong> accounts for <strong>${pct}%</strong> of Gross Loss (${fmtUSD(top.value)}) in the current view.`); }
+    if (values.length && avg > 0) {
+      let maxI=0, maxV=-1; values.forEach((v,i)=>{ if(v>maxV){maxV=v;maxI=i;} });
+      if (maxV > avg*2) items.push(`<strong>${labels[maxI]}</strong> saw a spike of ${fmtUSD(maxV)} — about <strong>${(maxV/avg).toFixed(1)}×</strong> the average in this range.`);
+    }
+    items.push(`Matched Recovery Rate for the current view: <strong>${matchedRate.toFixed(1)}%</strong> — ${fmtUSD(unmatchedLossSum)} in loss has no verified same-SKU/location recovery.`);
+    document.getElementById('watch-list').innerHTML = items.length
+      ? items.map((text,i)=>`<div class="watch-item"><span class="watch-marker">${i+1}</span><span class="watch-text">${text}</span></div>`).join('')
+      : `<p class="watch-empty">No notable outliers in the current filter.</p>`;
+  }
+
+  render();
+  document.getElementById('loading').style.display = 'none';
+})();
+</script>
+</body>
+</html>
