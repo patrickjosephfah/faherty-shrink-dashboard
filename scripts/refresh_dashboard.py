@@ -2,23 +2,25 @@
 """
 Daily dashboard refresh pipeline.
 
-Pulls the current fiscal year's transaction data from the Google Sheet (via a
-service account — see README.md for setup), combines it with the frozen
-historical seed (data/historical_seed.json, covering Legacy through FY2025),
-and regenerates dashboard_v2.html.
+Pulls the current fiscal year's transaction data from the Google Sheet (via
+the Apps Script web endpoint — see apps_script/Code.gs and README.md for
+setup), combines it with the frozen historical seed
+(data/historical_seed.json, covering Legacy through FY2025), and regenerates
+dashboard_v2.html.
 
 Usage:
-    python refresh_dashboard.py                 # pulls live from Google Sheets
-    python refresh_dashboard.py --local-csv PATH.csv   # for testing without
-                                                          Google credentials —
-                                                          reads a local CSV
-                                                          instead of the Sheet
+    python refresh_dashboard.py                        # pulls live via Apps Script
+    python refresh_dashboard.py --local-csv PATH.csv    # for testing without
+                                                           Google at all —
+                                                           reads a local CSV
+                                                           instead
 
-Environment variables (only needed for the real Google Sheets path):
-    GOOGLE_SERVICE_ACCOUNT_JSON   the service account's JSON key, as a string
-    GOOGLE_SHEET_ID               the Sheet's ID (from its URL)
-    GOOGLE_SHEET_RANGE            e.g. "Sheet1!A:N" — adjust to your sheet's
-                                   actual tab name and column range
+Environment variables (only needed for the real Apps Script path):
+    APPS_SCRIPT_URL          the deployed Web app URL (ends in /exec)
+    APPS_SCRIPT_TOKEN        the shared secret set as SECRET_TOKEN in the
+                              Sheet's Script Properties
+    GOOGLE_SHEET_WORKSHEET   the exact tab name (optional — omit to use the
+                              first tab)
 """
 
 import argparse
@@ -117,6 +119,22 @@ def load_current_year_data(local_csv=None):
     return df
 
 
+def _to_clean_str(series, blank_value=''):
+    """Force a column to uniform string values. Google Sheets (and therefore
+    Apps Script) auto-converts number-looking text in a free-text cell (e.g.
+    a Memo that's just '55105') into a real number — which later breaks any
+    sorted()/set() operation that mixes those numbers with genuine text from
+    other rows. This collapses everything to clean strings, and avoids
+    turning whole numbers into '123.0'-style artifacts."""
+    def conv(v):
+        if pd.isna(v):
+            return blank_value
+        if isinstance(v, float) and v.is_integer():
+            return str(int(v))
+        return str(v)
+    return series.apply(conv)
+
+
 def clean_current_year_data(df):
     df = df.copy()
 
@@ -140,8 +158,13 @@ def clean_current_year_data(df):
               f"— these rows' category won't map correctly. Add them to CATEGORY_ALIASES "
               f"or CATS in this script.")
 
-    df['Adjustment Reason'] = df['Adjustment Reason'].fillna('—')
-    df['Memo'] = df['Memo'].fillna('')
+    # every column that later feeds a sorted()/set() dimension-building step
+    # needs to be a uniform string type, or Python can't compare/sort it
+    df['Location'] = _to_clean_str(df['Location'])
+    df['SKU'] = _to_clean_str(df['SKU'])
+    df['Adjustment Reason'] = _to_clean_str(df['Adjustment Reason'], blank_value='—')
+    df['Memo'] = _to_clean_str(df['Memo'])
+
     df['Variance Quantity'] = pd.to_numeric(df['Variance Quantity'], errors='coerce').fillna(0).astype(int)
     df['Financial Impact ($)'] = pd.to_numeric(df['Financial Impact ($)'], errors='coerce').fillna(0).round(2)
 
@@ -153,13 +176,22 @@ def classify_locations(df):
     loc_dim = df.groupby('Location')[['Location Type', 'Region', 'Area', 'Vibe']].first()
     meta = {}
     for loc, row in loc_dim.iterrows():
-        ch = channel_for(loc, row['Location Type'] if pd.notna(row['Location Type']) else None)
-        meta[loc] = [
-            ch,
-            row['Region'] if pd.notna(row['Region']) else None,
-            row['Area'] if pd.notna(row['Area']) else None,
-            row['Vibe'] if pd.notna(row['Vibe']) else None,
-        ]
+        ltype = row['Location Type'] if pd.notna(row['Location Type']) else None
+        ch = channel_for(loc, str(ltype) if ltype is not None else None)
+
+        def clean_optional(v):
+            # keep as None when missing, but force a consistent string type
+            # when present — the dashboard's JS does strict string equality
+            # against these values for the Region/Area/Vibe filter dropdowns,
+            # so a stray number here would silently fail to filter correctly
+            # rather than throw an error.
+            if pd.isna(v):
+                return None
+            if isinstance(v, float) and v.is_integer():
+                return str(int(v))
+            return str(v)
+
+        meta[loc] = [ch, clean_optional(row['Region']), clean_optional(row['Area']), clean_optional(row['Vibe'])]
     return meta
 
 
