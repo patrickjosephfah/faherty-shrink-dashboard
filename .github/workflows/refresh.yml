@@ -1,0 +1,41 @@
+name: Refresh Dashboard
+
+on:
+  schedule:
+    # Runs daily at 12:00 UTC (adjust to run after your Parabola flow completes,
+    # e.g. if Parabola runs at 10:00 UTC, give it an hour of buffer here)
+    - cron: '0 12 * * *'
+  workflow_dispatch: {}   # lets you trigger a manual run from the Actions tab
+
+permissions:
+  contents: write   # needed so the workflow can commit the regenerated dashboard back
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run refresh pipeline
+        env:
+          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
+          APPS_SCRIPT_TOKEN: ${{ secrets.APPS_SCRIPT_TOKEN }}
+          GOOGLE_SHEET_WORKSHEET: ${{ secrets.GOOGLE_SHEET_WORKSHEET }}
+        run: python scripts/refresh_dashboard.py
+
+      - name: Commit updated dashboard
+        run: |
+          git config user.name "dashboard-bot"
+          git config user.email "actions@github.com"
+          git add dashboard_v2.html
+          git diff --staged --quiet && echo "No changes to commit" || git commit -m "Daily dashboard refresh: $(date -u +'%Y-%m-%d')"
+          git push
